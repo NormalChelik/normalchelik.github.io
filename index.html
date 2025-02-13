@@ -1,125 +1,80 @@
+<!-- duel.html (Web App часть) -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Telegram Click Game</title>
-    <meta charset="UTF-8">
+    <title>Duel</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            padding: 20px;
-            text-align: center;
-        }
-
-        #gameContainer {
-            display: none;
-        }
-
-        #clickButton {
-            padding: 20px 40px;
-            font-size: 24px;
-            margin: 20px;
-            cursor: pointer;
-            background-color: #0088cc;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            transition: transform 0.1s;
-        }
-
-        #clickButton:active {
-            transform: scale(0.95);
-        }
-
-        #timer, #countdown {
-            font-size: 32px;
-            margin: 20px;
-        }
-
-        #result {
-            font-size: 24px;
-            margin: 20px;
-        }
+        body { padding: 20px; text-align: center; }
+        .screen { display: none; }
+        .active { display: block; }
+        #clickBtn { padding: 20px; font-size: 24px; margin: 20px; }
+        #timer { font-size: 32px; color: red; }
     </style>
 </head>
 <body>
-    <div id="welcome"></div>
-    <div id="countdown"></div>
-    <div id="gameContainer">
-        <button id="clickButton">ЖМИ СЮДА!</button>
-        <div id="timer">Осталось: 60 сек</div>
+    <div id="waiting" class="screen">
+        <h2>Ожидание соперника...</h2>
+        <div id="opponentName"></div>
     </div>
-    <div id="result"></div>
+
+    <div id="game" class="screen">
+        <h2 id="count">0</h2>
+        <button id="clickBtn">ЖМИ!</button>
+        <div id="timer"></div>
+    </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        let clickCount = 0;
-        let gameTimer;
-        let countdownTimer;
-        let gameDuration = 60;
+        const urlParams = new URLSearchParams(location.search);
+        const duelId = urlParams.get('duel_id');
+        let count = 0;
+        let timer = 60;
 
-        function initApp() {
-            tg.expand();
-            const user = tg.initDataUnsafe.user;
-            const username = user?.username || 'Anonymous';
-            document.getElementById('welcome').innerHTML = `Привет, ${username}!`;
+        tg.ready();
+        tg.expand();
 
-            startCountdown();
+        // Отправка данных боту
+        function sendData(type, data = {}) {
+            tg.sendData(JSON.stringify({
+                type,
+                duel_id: duelId,
+                ...data
+            }));
         }
 
-        function startCountdown() {
-            let seconds = 5;
-            document.getElementById('countdown').textContent = `Игра начнется через: ${seconds}`;
-
-            countdownTimer = setInterval(() => {
-                seconds--;
-                document.getElementById('countdown').textContent = `Игра начнется через: ${seconds}`;
-
-                if (seconds <= 0) {
-                    clearInterval(countdownTimer);
-                    document.getElementById('countdown').style.display = 'none';
-                    startGame();
-                }
-            }, 1000);
-        }
-
-        function startGame() {
-            document.getElementById('gameContainer').style.display = 'block';
-            clickCount = 0;
-
-            let timeLeft = gameDuration;
-            gameTimer = setInterval(() => {
-                timeLeft--;
-                document.getElementById('timer').textContent = `Осталось: ${timeLeft} сек`;
-
-                if (timeLeft <= 0) {
-                    endGame();
-                }
-            }, 1000);
-        }
-
-        function endGame() {
-            clearInterval(gameTimer);
-            document.getElementById('gameContainer').style.display = 'none';
-            document.getElementById('result').textContent = `Твой результат: ${clickCount} нажатий!`;
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 5000);
-        }
-
-        document.getElementById('clickButton').addEventListener('click', () => {
-            clickCount++;
+        // Инициализация дуэли
+        sendData('join', {
+            user_id: tg.initDataUnsafe.user.id,
+            username: tg.initDataUnsafe.user.username
         });
 
-        Telegram.WebApp.ready();
-        initApp();
+        // Обработчик кликов
+        document.getElementById('clickBtn').onclick = () => {
+            count++;
+            document.getElementById('count').textContent = count;
+            sendData('click', { count });
+        };
+
+        // Таймер игры
+        function updateTimer() {
+            if(timer <= 0) {
+                sendData('result', { count });
+                document.getElementById('game').classList.remove('active');
+                return;
+            }
+
+            document.getElementById('timer').textContent = `Осталось: ${timer--} сек`;
+            setTimeout(updateTimer, 1000);
+        }
+
+        // Старт игры при получении параметра
+        if(urlParams.get('start')) {
+            document.getElementById('game').classList.add('active');
+            updateTimer();
+        } else {
+            document.getElementById('waiting').classList.add('active');
+        }
     </script>
 </body>
 </html>
