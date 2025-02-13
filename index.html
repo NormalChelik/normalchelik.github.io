@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кликер Дуэль</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(45deg, #1a1a1a, #4a4a4a);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        #clickButton {
+            padding: 20px 40px;
+            font-size: 24px;
+            background: #4CAF50;
+            border: none;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            margin: 20px;
+            transition: background 0.3s;
+        }
+
+        #clickButton:disabled {
+            background: #888;
+            cursor: not-allowed;
+        }
+
+        .timer {
+            font-size: 32px;
+            margin: 20px;
+        }
+
+        .counters {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px;
+        }
+
+        .counter {
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="status">Загрузка...</div>
+        <div id="countdown" class="timer" style="display: none;"></div>
+        <div id="gameTimer" class="timer" style="display: none;"></div>
+        <button id="clickButton" disabled>Кликни меня!</button>
+        <div class="counters">
+            <div class="counter">Ваши клики: <span id="userClicks">0</span></div>
+            <div class="counter">Соперник: <span id="opponentClicks">0</span></div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const user = tg.initDataUnsafe.user;
+        const userId = user?.id?.toString() || Math.random().toString(36).substr(2, 9);
+        const username = user?.username || 'Аноним';
+
+        let gameId = null;
+        let isHost = false;
+        let userClicks = 0;
+        let opponentClicks = 0;
+        let gameInterval;
+
+        const statusEl = document.getElementById('status');
+        const countdownEl = document.getElementById('countdown');
+        const gameTimerEl = document.getElementById('gameTimer');
+        const clickButton = document.getElementById('clickButton');
+        const userClicksEl = document.getElementById('userClicks');
+        const opponentClicksEl = document.getElementById('opponentClicks');
+
+        // Генерация ID игры
+        function generateGameId() {
+            return Math.random().toString(36).substr(2, 9);
+        }
+
+        // Инициализация игры
+        function initGame() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            if(urlParams.has('join')) {
+                gameId = urlParams.get('join');
+                isHost = false;
+                statusEl.textContent = 'Ожидание начала игры...';
+                startGameLoop();
+            } else {
+                gameId = generateGameId();
+                isHost = true;
+                window.history.replaceState({}, '', `?game=${gameId}`);
+                statusEl.textContent = 'Ожидание второго игрока...';
+                shareGameLink();
+                startGameLoop();
+            }
+        }
+
+        // Поделиться ссылкой
+        function shareGameLink() {
+            const link = `${window.location.href}?join=${gameId}`;
+            tg.showAlert(`Пригласительная ссылка: ${link}`);
+        }
+
+        // Игровой цикл
+        function startGameLoop() {
+            setInterval(() => {
+                if(isHost) {
+                    const gameState = JSON.parse(localStorage.getItem(gameId) || '{}');
+                    if(!gameState.players) gameState.players = {};
+
+                    gameState.players[userId] = userClicks;
+                    localStorage.setItem(gameId, JSON.stringify(gameState));
+
+                    if(Object.keys(gameState.players).length === 2 && !gameState.started) {
+                        startCountdown();
+                        gameState.started = true;
+                        localStorage.setItem(gameId, JSON.stringify(gameState));
+                    }
+                } else {
+                    const gameState = JSON.parse(localStorage.getItem(gameId) || {});
+                    if(gameState.started) {
+                        startCountdown();
+                    }
+                    opponentClicks = Object.values(gameState.players)
+                        .filter((_, key) => key !== userId)
+                        .reduce((a, b) => a + b, 0);
+                    opponentClicksEl.textContent = opponentClicks;
+                }
+            }, 1000);
+        }
+
+        function startCountdown() {
+            statusEl.style.display = 'none';
+            countdownEl.style.display = 'block';
+
+            let count = 5;
+            const countdownInterval = setInterval(() => {
+                countdownEl.textContent = `Дуэль начнется через ${count} сек.`;
+                if(count-- <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownEl.style.display = 'none';
+                    startGame();
+                }
+            }, 1000);
+        }
+
+        function startGame() {
+            gameTimerEl.style.display = 'block';
+            clickButton.disabled = false;
+
+            let timeLeft = 60;
+            gameInterval = setInterval(() => {
+                gameTimerEl.textContent = `Осталось времени: ${timeLeft} сек.`;
+                if(timeLeft-- <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            clearInterval(gameInterval);
+            clickButton.disabled = true;
+
+            const gameState = JSON.parse(localStorage.getItem(gameId));
+            const [player1, player2] = Object.values(gameState.players);
+
+            if(userClicks > opponentClicks) {
+                tg.showAlert('🎉 Вы победили!');
+            } else if(userClicks < opponentClicks) {
+                tg.showAlert('😢 Вы проиграли!');
+            } else {
+                tg.showAlert('🤝 Ничья!');
+            }
+
+            localStorage.removeItem(gameId);
+        }
+
+        clickButton.addEventListener('click', () => {
+            userClicks++;
+            userClicksEl.textContent = userClicks;
+        });
+
+        // Инициализация
+        if(userId) {
+            initGame();
+        } else {
+            statusEl.textContent = 'Ошибка авторизации!';
+        }
+    </script>
+</body>
+</html>
